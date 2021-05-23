@@ -54,10 +54,87 @@ static const cgroups_subsystem_t cgroups_subsystems[] = {
   NULL
 };
 
+/* same semantic as strtok_r.  */
+static bool
+read_proc_cgroup (char *content, char **saveptr, char **id, char **controller_list, char **path)
+{
+  char *it;
+
+  it = strtok_r (content, "\n", saveptr);
+  if (it == NULL)
+    return false;
+
+  if (id)
+    *id = it;
+
+  it = strchr (it, ':');
+  if (it == NULL)
+    return false;
+  *it++ = '\0';
+
+  if (controller_list)
+    *controller_list = it;
+
+  it = strchr (it, ':');
+  if (it == NULL)
+    return false;
+  *it++ = '\0';
+
+  if (path)
+    *path = it;
+
+  return true;
+}
+
 const cgroups_subsystem_t *
 libcrun_get_cgroups_subsystems (libcrun_error_t *err arg_unused)
 {
-  return cgroups_subsystems;
+  cleanup_free char *content = NULL;
+  size_t content_size;
+  char *controller;
+  char *saveptr;
+  bool has_data;
+  int ret;
+  // helper vars for dynamically allocated cgroups_subsystems
+  int arr_size;
+  int arr_iter;
+
+  arr_size = 1;
+  arr_iter = 0;
+  const cgroups_subsystem_t **cgroups_subsystems = xmalloc(sizeof(cgroups_subsystem_t) * arr_size);
+  // inject null element
+  cgroups_subsystems[arr_iter] = xmalloc(sizeof(cgroups_subsystem_t));
+  cgroups_subsystems[arr_iter] = NULL;
+
+  ret = read_all_file ("/proc/self/cgroup", &content, &content_size, err);
+  if (UNLIKELY (ret < 0))
+    {
+      if (crun_error_get_errno (err) == ENOENT)
+        {
+          crun_error_release (err);
+          return NULL;
+        }
+      return NULL;
+    }
+
+  for (has_data = read_proc_cgroup (content, &saveptr, NULL, &controller, NULL);
+       has_data;
+       has_data = read_proc_cgroup (NULL, &saveptr, NULL, &controller, NULL))
+    {
+      const char *subsystem;
+      if (has_prefix (controller, "name="))
+        controller += 5;
+
+      subsystem = controller[0] == '\0' ? "unified" : controller;
+      // found another subsystem grow array and add subsystem
+      arr_iter++;
+      arr_size++;
+      cgroups_subsystems = xrealloc(cgroups_subsystems, sizeof(cgroups_subsystem_t) * arr_size);
+      cgroups_subsystems[arr_iter] = xmalloc(sizeof(cgroups_subsystem_t));
+      cgroups_subsystems[arr_iter] = &subsystem;
+
+    }
+    return cgroups_subsystems;
 }
 
 struct symlink_s
@@ -699,37 +776,6 @@ read_unified_cgroup_pid (pid_t pid, char **path, libcrun_error_t *err)
   return 0;
 }
 
-/* same semantic as strtok_r.  */
-static bool
-read_proc_cgroup (char *content, char **saveptr, char **id, char **controller_list, char **path)
-{
-  char *it;
-
-  it = strtok_r (content, "\n", saveptr);
-  if (it == NULL)
-    return false;
-
-  if (id)
-    *id = it;
-
-  it = strchr (it, ':');
-  if (it == NULL)
-    return false;
-  *it++ = '\0';
-
-  if (controller_list)
-    *controller_list = it;
-
-  it = strchr (it, ':');
-  if (it == NULL)
-    return false;
-  *it++ = '\0';
-
-  if (path)
-    *path = it;
-
-  return true;
-}
 
 static int
 enter_cgroup_v1 (pid_t pid, const char *path, bool create_if_missing, libcrun_error_t *err)
