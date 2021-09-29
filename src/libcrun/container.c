@@ -51,6 +51,10 @@
 #  include <libkrun.h>
 #endif
 
+#ifdef HAVE_WASMER
+#  include <wasmer.h>
+#endif
+
 #ifdef HAVE_SYSTEMD
 #  include <systemd/sd-daemon.h>
 #endif
@@ -743,6 +747,97 @@ yajl_error:
   return yajl_error_to_crun_error (r, err);
 }
 
+#if HAVE_WASMER
+static int
+wasmer_do_exec (void *container, void *arg, const char *pathname, char *const argv[])
+{
+  wasm_byte_vec_t wat;
+  wasm_byte_vec_t wasm_bytes;
+  wasm_engine_t *engine;
+  wasm_val_t results_val[1] = { WASM_INIT_VAL };
+  wasm_store_t *store;
+  wasm_module_t *module;
+  wasm_instance_t *instance;
+  wasm_extern_vec_t exports;
+
+  FILE *wat_wasm_file;
+  size_t file_size;
+  const wasm_func_t *core_func;
+
+  wat_wasm_file = fopen (pathname, "rb");
+
+  if (! wat_wasm_file)
+    {
+      error (EXIT_FAILURE, -1, "error opening wat/wasm module");
+    }
+
+  fseek (wat_wasm_file, 0L, SEEK_END);
+  file_size = ftell (wat_wasm_file);
+  fseek (wat_wasm_file, 0L, SEEK_SET);
+
+  wasm_byte_vec_new_uninitialized (&wasm_bytes, file_size);
+
+  if (fread (wasm_bytes.data, file_size, 1, wat_wasm_file) != 1)
+    {
+      error (EXIT_FAILURE, -1, "error loading wat/wasm module");
+    }
+  // we can close entrypoint file
+  fclose (wat_wasm_file);
+
+  module = wasm_module_new (store, &wasm_bytes);
+
+  wat2wasm (&wat, &wasm_bytes);
+  engine = wasm_engine_new ();
+  store = wasm_store_new (engine);
+
+  module = wasm_module_new (store, &wasm_bytes);
+
+  if (! module)
+    {
+      error (EXIT_FAILURE, -1, "error compiling wasm module");
+    }
+
+  wasm_byte_vec_delete (&wasm_bytes);
+  wasm_extern_vec_t imports = WASM_EMPTY_VEC;
+
+  instance = wasm_instance_new (store, module, &imports, NULL);
+
+  if (! instance)
+    {
+      error (EXIT_FAILURE, -1, "error initiating wasm module");
+    }
+
+  wasm_instance_exports (instance, &exports);
+
+  if (exports.size == 0)
+    {
+      error (EXIT_FAILURE, -1, "error accessing exports");
+    }
+
+  core_func = wasm_extern_as_func (exports.data[0]);
+  if (core_func == NULL)
+    {
+      error (EXIT_FAILURE, -1, "error accessing export");
+    }
+
+  wasm_module_delete (module);
+  wasm_instance_delete (instance);
+
+  // set args for wasm function here
+  wasm_val_vec_t results = WASM_ARRAY_VEC (results_val);
+
+  if (wasm_func_call (core_func, NULL, &results))
+    {
+      error (EXIT_FAILURE, -1, "error calling core wasm function");
+      return 1;
+    }
+
+  wasm_extern_vec_delete (&exports);
+  wasm_store_delete (store);
+  wasm_engine_delete (engine);
+}
+#endif
+
 #if HAVE_DLOPEN && HAVE_LIBKRUN
 static int
 libkrun_do_exec (void *container, void *arg, const char *pathname, char *const argv[])
@@ -836,6 +931,21 @@ libcrun_configure_libkrun (struct container_entrypoint_s *args, libcrun_error_t 
 }
 
 static int
+libcrun_configure_wasmer (struct container_entrypoint_s *args, libcrun_error_t *err)
+{
+
+#if HAVE_WASMER
+  args->exec_func = wasmer_do_exec;
+  args->exec_func_arg = args;
+
+  return 0;
+#else
+  (void) args;
+  return crun_make_error (err, ENOTSUP, "wasmer support not present");
+#endif
+}
+
+static int
 libcrun_configure_handler (struct container_entrypoint_s *args, libcrun_error_t *err)
 {
   const char *annotation;
@@ -865,6 +975,13 @@ libcrun_configure_handler (struct container_entrypoint_s *args, libcrun_error_t 
       /* set global_handler equivalent to "krun" so that we can mount kvm device */
       args->context->handler = annotation;
       return libcrun_configure_libkrun (args, err);
+    }
+
+  if (strcmp (annotation, "wasm") == 0)
+    {
+      /* set global_handler equivalent to "wasm" so that we can mount kvm device */
+      args->context->handler = annotation;
+      return libcrun_configure_wasmer (args, err);
     }
 
   return crun_make_error (err, EINVAL, "invalid handler specified `%s`", annotation);
