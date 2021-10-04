@@ -751,6 +751,51 @@ yajl_error:
 static int
 wasmer_do_exec (void *container, void *arg, const char *pathname, char *const argv[])
 {
+
+  void *handle = arg;
+  wasm_engine_t *(*wasm_engine_new) ();
+  void (*wat2wasm) (const wasm_byte_vec_t *wat, wasm_byte_vec_t *out);
+  wasm_module_t *(*wasm_module_new) (wasm_store_t *, const wasm_byte_vec_t *binary);
+  wasm_store_t *(*wasm_store_new) (wasm_engine_t *);
+  wasm_instance_t *(*wasm_instance_new) (wasm_store_t *, const wasm_module_t *, const wasm_extern_vec_t *imports, wasm_trap_t **);
+  void (*wasm_instance_exports) (const wasm_instance_t *, wasm_extern_vec_t *out);
+  wasm_func_t *(*wasm_extern_as_func) (wasm_extern_t *);
+  void (*wasm_module_delete) (wasm_module_t *);
+  void (*wasm_instance_delete) (wasm_instance_t *);
+  void (*wasm_store_delete) (wasm_store_t *);
+  void (*wasm_engine_delete) (wasm_engine_t *);
+  void (*wasm_byte_vec_new) (wasm_byte_vec_t *, size_t, const char *);
+  void (*wasm_byte_vec_delete) (wasm_byte_vec_t *);
+  void (*wasm_extern_vec_delete) (wasm_extern_vec_t *);
+  void (*wasm_byte_vec_new_uninitialized) (wasm_byte_vec_t *, size_t);
+  wasm_trap_t *(*wasm_func_call) (const wasm_func_t *, const wasm_val_vec_t *args, wasm_val_vec_t *results);
+
+  wat2wasm = dlsym (handle, "wat2wasm");
+  wasm_module_delete = dlsym (handle, "wasm_module_delete");
+  wasm_instance_delete = dlsym (handle, "wasm_instance_delete");
+  wasm_engine_delete = dlsym (handle, "wasm_engine_delete");
+  wasm_store_delete = dlsym (handle, "wasm_store_delete");
+  wasm_func_call = dlsym (handle, "wasm_func_call");
+  wasm_extern_as_func = dlsym (handle, "wasm_extern_as_func");
+  wasm_instance_exports = dlsym (handle, "wasm_instance_exports");
+  wasm_instance_new = dlsym (handle, "wasm_instance_new");
+  wasm_store_new = dlsym (handle, "wasm_store_new");
+  wasm_module_new = dlsym (handle, "wasm_module_new");
+  wasm_engine_new = dlsym (handle, "wasm_engine_new");
+  wasm_byte_vec_new = dlsym (handle, "wasm_byte_vec_new");
+  wasm_byte_vec_delete = dlsym (handle, "wasm_byte_vec_delete");
+  wasm_extern_vec_delete = dlsym (handle, "wasm_extern_vec_delete");
+  wasm_byte_vec_new_uninitialized = dlsym (handle, "wasm_byte_vec_new_uninitialized");
+
+  if (wat2wasm == NULL || wasm_module_delete == NULL || wasm_instance_delete == NULL || wasm_engine_delete == NULL || wasm_store_delete == NULL
+      || wasm_func_call == NULL || wasm_extern_as_func == NULL || wasm_instance_exports == NULL || wasm_instance_new == NULL
+      || wasm_store_new == NULL || wasm_engine_new == NULL || wasm_byte_vec_new == NULL || wasm_byte_vec_delete == NULL || wasm_extern_vec_delete == NULL || wasm_byte_vec_new_uninitialized == NULL)
+    {
+      fprintf (stderr, "could not find symbol in `libwasmer.so`");
+      dlclose (handle);
+      return -1;
+    }
+
   wasm_byte_vec_t wat;
   wasm_byte_vec_t wasm_bytes;
   wasm_engine_t *engine;
@@ -934,9 +979,17 @@ static int
 libcrun_configure_wasmer (struct container_entrypoint_s *args, libcrun_error_t *err)
 {
 
-#if HAVE_WASMER
+#if HAVE_DLOPEN && HAVE_WASMER
+  void *handle;
+#endif
+
+#if HAVE_DLOPEN && HAVE_WASMER
+  handle = dlopen ("libwasmer.so", RTLD_NOW);
+  if (handle == NULL)
+    return crun_make_error (err, 0, "could not load `libwasmer.so`: %s", dlerror ());
+
   args->exec_func = wasmer_do_exec;
-  args->exec_func_arg = args;
+  args->exec_func_arg = handle;
 
   return 0;
 #else
