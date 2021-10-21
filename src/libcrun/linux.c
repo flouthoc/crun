@@ -3987,6 +3987,8 @@ libcrun_container_restore_linux (libcrun_container_status_t *status, libcrun_con
   if (UNLIKELY (ret < 0))
     return ret;
 
+  get_private_data (container)->external_descriptors = status->external_descriptors;
+
   return 0;
 }
 
