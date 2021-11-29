@@ -58,6 +58,13 @@
 #  include <wasmedge.h>
 #endif
 
+#ifdef HAVE_MONO
+#  include <mono/metadata/environment.h>
+#  include <mono/utils/mono-publib.h>
+#  include <mono/metadata/mono-config.h>
+#  include <mono/jit/jit.h>
+#endif
+
 #ifdef HAVE_SYSTEMD
 #  include <systemd/sd-daemon.h>
 #endif
@@ -1128,6 +1135,58 @@ libkrun_do_exec (void *container, void *arg, const char *pathname, char *const a
     error (EXIT_FAILURE, -ret, "could not set krun executable");
 
   return krun_start_enter (ctx_id);
+}
+#endif
+
+#if HAVE_DLOPEN && HAVE_MONO
+static int
+mono_dotnet_do_exec (void *container, void *arg, const char *pathname, char *const argv[])
+{
+  MonoDomain *domain;
+  int argc = 2;
+  char *argv_mono[] = {
+    pathname,
+    pathname,
+    NULL
+  };
+  const char *file;
+  int retval;
+
+  file = argv_mono[1];
+
+  MonoAllocatorVTable mem_vtable = { MONO_ALLOCATOR_VTABLE_VERSION, xmalloc, NULL, NULL, NULL };
+  mono_set_allocator_vtable (&mem_vtable);
+
+  /*
+	 * Load the default Mono configuration file, this is needed
+	 * if you are planning on using the dllmaps defined on the
+	 * system configuration
+	 */
+  mono_config_parse (NULL);
+  /*
+	 * mono_jit_init() creates a domain: each assembly is
+	 * loaded and run in a MonoDomain.
+	 */
+  domain = mono_jit_init (file);
+  /*
+	 * We add our special internal call, so that C# code
+	 * can call us back.
+	 */
+  // do we need internal call support ? I think not
+  //mono_add_internal_call ();
+
+  MonoAssembly *assembly;
+  assembly = mono_domain_assembly_open (domain, file);
+  if (! assembly)
+    exit (2);
+  /*
+	 * mono_jit_exec() will run the Main() method in the assembly.
+	 * The return value needs to be looked up from
+	 * System.Environment.ExitCode.
+	 */
+  mono_jit_exec (domain, assembly, argc - 1, argv_mono + 1);
+  retval = mono_environment_exitcode_get ();
+  mono_jit_cleanup (domain);
 }
 #endif
 
