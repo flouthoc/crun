@@ -283,6 +283,17 @@ def run_crun_command(args):
     args = [crun, "--root", root] + args
     return subprocess.check_output(args, close_fds=False).decode()
 
+# performs crun delete for given container_id or errors out, causing the test to fail.
+# takes container_id and force flag. If force delete is true `crun delete -f` is performed
+def run_crun_delete_or_error(container_id, force=False):
+    root = get_tests_root_status()
+    crun = get_crun_path()
+    force_cmd = ""
+    if force:
+        force_cmd="-f "
+    # TODO: maybe replace check_output with something better
+    return subprocess.check_output(crun+" --root "+root+" delete "+force_cmd+container_id, stderr=subprocess.STDOUT, shell=True, close_fds=False).decode()
+
 def running_on_systemd():
     with open('/proc/1/comm') as f:
         return "systemd" in f.readline()
