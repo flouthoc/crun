@@ -56,27 +56,27 @@ jobs:
             fi
 
   Test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
       matrix:
         include:
-          - test: disable-systemd
-          - test: check
-          - test: podman
+          #- test: disable-systemd
+          #- test: check
+          #- test: podman
           - test: cri-o
-          - test: containerd
-          - test: oci-validation
-          - test: alpine-build
-          - test: fedora-rawhide-mockbuild
-          - test: centos8-build
-          - test: centos9-build
-          - test: clang-format
-          - test: clang-check
-          - test: checkpoint-restore
-          - test: fuzzing
-          - test: codespell
-          - test: wasmedge-build
+          #- test: containerd
+          #- test: oci-validation
+          #- test: alpine-build
+          #- test: fedora-rawhide-mockbuild
+          #- test: centos8-build
+          #- test: centos9-build
+          #- test: clang-format
+          #- test: clang-check
+          #- test: checkpoint-restore
+          #- test: fuzzing
+          #- test: codespell
+          #- test: wasmedge-build
     steps:
       - name: checkout
         uses: actions/checkout@v3

@@ -65,4 +65,4 @@ sed -i -e 's|@test \(.*\)$|@test \1\nskip\n|g' test/irqbalance.bats
 # remove useless tests
 rm test/image.* test/config* test/reload_config.bats test/crio-wipe.bats test/network.bats
 
-test/test_runner.sh
+test/runner.sh

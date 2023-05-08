@@ -36,4 +36,5 @@ RUN yum install -y python git gcc automake autoconf libcap-devel \
 
 COPY run-tests.sh /usr/local/bin
 WORKDIR /root/go/src/github.com/cri-o/cri-o
+COPY runner.sh /root/go/src/github.com/cri-o/cri-o/test/runner.sh
 ENTRYPOINT /usr/local/bin/run-tests.sh
